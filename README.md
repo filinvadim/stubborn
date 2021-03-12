@@ -20,7 +20,7 @@ the duplex protocols using various types of clients.
 
 ### Stubborn advantages
 
-1. Agnostic to any clients by ```WSConnector interface```.
+1. Agnostic to any clients by ```DuplexConnector interface```.
 2. Therefore, it's fully testable using mock that implements three methods:
    ```
    Close() error
@@ -29,7 +29,7 @@ the duplex protocols using various types of clients.
    ```
 3. Persistence. Stubborn framework won't stop fetching data even if `panic()` occurs
    (that's useful if for example Gorilla WebSocket was used as client).
-4. Fairly configurable for any WebSocker API requirements.
+4. Fairly configurable for any API requirements.
 5. No external dependencies whatsoever.
 
 ### Stubborn disadvantages

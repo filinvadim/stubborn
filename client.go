@@ -39,7 +39,7 @@ type Config struct {
 
 type client struct {
 	url  string
-	conn WSConnector
+	conn DuplexConnector
 
 	config Config
 	print  PrintFunc

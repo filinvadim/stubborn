@@ -12,7 +12,7 @@ const (
 )
 
 type (
-	WSConnector interface {
+	DuplexConnector interface {
 		Close() error
 		ReadMessage() (messageType int, p []byte, err error)
 		WriteMessage(messageType int, data []byte) error
@@ -24,7 +24,7 @@ type (
 		CustomPong func(msgTp int, data []byte) (msgType int, payload []byte)
 	}
 
-	DialerFunc func() (WSConnector, error)
+	DialerFunc func() (DuplexConnector, error)
 
 	AuthHandler    func() (req []byte, resp []byte, err error)
 	MessageHandler func(resp []byte)
