@@ -6,8 +6,8 @@ clients that uses duplex protocols such as
 
 ### Examples
 
-* [Echo wss server example](https://github.com/filinvadim/stubborn/tree/master/example/wss/main.go)
-* [Echo http2 server example](https://github.com/filinvadim/stubborn/tree/master/example/http2/main.go)
+* [Echo wss client example](https://github.com/filinvadim/stubborn/tree/master/example/wss/main.go)
+* [Echo http2 client example](https://github.com/filinvadim/stubborn/tree/master/example/http2/main.go)
 
 ### Status
 
