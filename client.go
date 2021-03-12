@@ -173,7 +173,7 @@ func (s *client) Connect(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	s.print("websocket connection established")
+	s.print("connection established")
 
 	s.once.Do(func() {
 		s.timeAlive = time.Now()
