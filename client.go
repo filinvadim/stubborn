@@ -37,7 +37,7 @@ type Config struct {
 	UnimportantErrs []error
 }
 
-type client struct {
+type Client struct {
 	url  string
 	conn DuplexConnector
 
@@ -76,8 +76,8 @@ type client struct {
 
 func NewStubborn(
 	conf Config,
-) *client {
-	s := new(client)
+) *Client {
+	s := new(Client)
 
 	s.url = conf.URL
 	s.stopRead = make(chan struct{})
@@ -104,7 +104,7 @@ func NewStubborn(
 }
 
 // Set auth callback handler
-func (s *client) SetAuthHandler(authH AuthHandler) {
+func (s *Client) SetAuthHandler(authH AuthHandler) {
 	if s == nil {
 		return
 	}
@@ -116,7 +116,7 @@ func (s *client) SetAuthHandler(authH AuthHandler) {
 }
 
 // Set message handler excluding errors
-func (s *client) SetMessageHandler(msgH MessageHandler) {
+func (s *Client) SetMessageHandler(msgH MessageHandler) {
 	if s == nil {
 		return
 	}
@@ -128,7 +128,7 @@ func (s *client) SetMessageHandler(msgH MessageHandler) {
 }
 
 // Set error handler excluding messages
-func (s *client) SetErrorHandler(errH ErrorHandler) {
+func (s *Client) SetErrorHandler(errH ErrorHandler) {
 	if s == nil {
 		return
 	}
@@ -140,7 +140,7 @@ func (s *client) SetErrorHandler(errH ErrorHandler) {
 }
 
 // Keep connection intact and trace it state
-func (s *client) SetKeepAliveHandler(keep KeepAlive) {
+func (s *Client) SetKeepAliveHandler(keep KeepAlive) {
 	if s == nil {
 		return
 	}
@@ -151,7 +151,7 @@ func (s *client) SetKeepAliveHandler(keep KeepAlive) {
 	s.keep = &keep
 }
 
-func (s *client) Connect(ctx context.Context) (err error) {
+func (s *Client) Connect(ctx context.Context) (err error) {
 	if s == nil {
 		return errNotInit
 	}
@@ -208,7 +208,7 @@ func (s *client) Connect(ctx context.Context) (err error) {
 	return nil
 }
 
-func (s *client) auth() error {
+func (s *Client) auth() error {
 	if s.authHandler == nil {
 		return nil
 	}
@@ -238,7 +238,7 @@ func (s *client) auth() error {
 	return nil
 }
 
-func (s *client) keepAlive() {
+func (s *Client) keepAlive() {
 	if s.keep.Tick == nil {
 		return
 	}
@@ -275,7 +275,7 @@ func (s *client) keepAlive() {
 	}
 }
 
-func (s *client) Send(msgType int, message []byte) error {
+func (s *Client) Send(msgType int, message []byte) error {
 	if s == nil {
 		return errNotInit
 	}
@@ -289,7 +289,7 @@ func (s *client) Send(msgType int, message []byte) error {
 	return err
 }
 
-func (s *client) read() (messageType int, p []byte, err error) {
+func (s *Client) read() (messageType int, p []byte, err error) {
 	if s == nil {
 		return 0, nil, errNotInit
 	}
@@ -298,7 +298,7 @@ func (s *client) read() (messageType int, p []byte, err error) {
 	return
 }
 
-func (s *client) reconnect() {
+func (s *Client) reconnect() {
 	for cErr := range s.critErrChan {
 		if s.isClosed {
 			return
@@ -352,7 +352,7 @@ func (s *client) reconnect() {
 	s.print("reconnect stopped")
 }
 
-func (s *client) handleErrors() {
+func (s *Client) handleErrors() {
 	for err := range s.errChan {
 		if s.errorHandler != nil {
 			s.errorHandler(err)
@@ -361,7 +361,7 @@ func (s *client) handleErrors() {
 	s.print("errors handling stopped")
 }
 
-func (s *client) readLoop() {
+func (s *Client) readLoop() {
 	defer func() {
 		if r := recover(); r != nil {
 			if s.isClosed {
@@ -438,7 +438,7 @@ func (s *client) readLoop() {
 	}
 }
 
-func (s *client) checkPong(msgType int, payload []byte) (int, []byte) {
+func (s *Client) checkPong(msgType int, payload []byte) (int, []byte) {
 	if s.keep == nil {
 		return 0, nil
 	}
@@ -450,7 +450,7 @@ func (s *client) checkPong(msgType int, payload []byte) (int, []byte) {
 
 }
 
-func (s *client) isUnimportant(err error) (ok bool) {
+func (s *Client) isUnimportant(err error) (ok bool) {
 	if err == nil {
 		return
 	}
@@ -465,7 +465,7 @@ func (s *client) isUnimportant(err error) (ok bool) {
 	return
 }
 
-func (s *client) checkAuth(data []byte) (ok bool) {
+func (s *Client) checkAuth(data []byte) (ok bool) {
 	if s.authHandler == nil {
 		return
 	}
@@ -493,7 +493,7 @@ func (s *client) checkAuth(data []byte) (ok bool) {
 }
 
 // in case this important
-func (s *client) waitErrors() {
+func (s *Client) waitErrors() {
 	for {
 		if len(s.errChan) == 0 {
 			return
@@ -513,7 +513,7 @@ func minorErr(err error) error {
 	return fmt.Errorf("%s %w", err, ErrMinor)
 }
 
-func (s *client) Close() {
+func (s *Client) Close() {
 	s.isClosed = true
 
 	close(s.stopRead)
