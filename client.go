@@ -327,6 +327,8 @@ func (s *Client) reconnect() {
 			continue
 		}
 
+		s.reconnectedCh <- struct{}{}
+
 		err = s.auth()
 		if err != nil {
 			s.critErrChan <- criticalErr(err)
@@ -336,8 +338,6 @@ func (s *Client) reconnect() {
 		s.timeMx.Lock()
 		s.timeAlive = time.Now()
 		s.timeMx.Unlock()
-
-		s.reconnectedCh <- struct{}{}
 
 		// sending notification about reconnect event by error
 		s.errChan <- criticalErr(cErr)
