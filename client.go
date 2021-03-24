@@ -410,10 +410,17 @@ func (s *Client) readLoop() {
 			var payload []byte
 			switch msgType {
 			case BinaryMessage:
-				payload, err = GZipDecompress(msg)
+				payload, err = FlateDecompress(msg)
 				if err != nil {
 					s.errChan <- majorErr(err)
+
+					payload, err = GZipDecompress(msg)
+					if err != nil {
+						s.errChan <- majorErr(err)
+						payload = msg
+					}
 				}
+
 			case TextMessage:
 				payload = msg
 			default:

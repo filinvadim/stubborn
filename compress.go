@@ -2,6 +2,7 @@ package stubborn
 
 import (
 	"bytes"
+	"compress/flate"
 	"compress/gzip"
 	"io"
 )
@@ -15,6 +16,19 @@ func GZipDecompress(input []byte) ([]byte, error) {
 	defer reader.Close()
 
 	buf = bytes.NewBuffer(nil)
+	_, err := io.Copy(buf, reader)
+	if err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+func FlateDecompress(input []byte) ([]byte, error) {
+	reader := flate.NewReader(bytes.NewReader(input))
+	defer reader.Close()
+
+	buf := bytes.NewBuffer(nil)
 	_, err := io.Copy(buf, reader)
 	if err != nil {
 		return nil, err
