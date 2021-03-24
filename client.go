@@ -405,8 +405,6 @@ func (s *Client) readLoop() {
 				break
 			}
 
-			s.print("message received", string(msg))
-
 			var payload []byte
 			switch msgType {
 			case BinaryMessage:
@@ -426,6 +424,8 @@ func (s *Client) readLoop() {
 			default:
 				payload = msg
 			}
+
+			s.print("message received", string(payload))
 
 			tp, p := s.checkPong(msgType, payload)
 			if tp != 0 {
