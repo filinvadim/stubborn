@@ -33,7 +33,7 @@ var (
 
 func TestConnectSuccess(t *testing.T) {
 	stub := NewStubborn(Config{
-		Dialerf: func() (DuplexConnector, error) {
+		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
 		URL: "test",
@@ -61,7 +61,7 @@ func TestConnectFailNoDialer(t *testing.T) {
 	errNoDialer := errors.New("no dialer")
 
 	stub := NewStubborn(Config{
-		Dialerf: func() (DuplexConnector, error) {
+		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return nil, errNoDialer
 		},
 		URL: "test",
@@ -81,7 +81,7 @@ func TestConnectFailNoDialer(t *testing.T) {
 
 func TestConnectFailNoMessageHandler(t *testing.T) {
 	stub := NewStubborn(Config{
-		Dialerf: func() (DuplexConnector, error) {
+		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
 		URL: "test",
@@ -107,7 +107,7 @@ func TestConnectFailNoMessageHandler(t *testing.T) {
 
 func TestConnectFailNoURL(t *testing.T) {
 	stub := NewStubborn(Config{
-		Dialerf: func() (DuplexConnector, error) {
+		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
 		URL: "",
@@ -146,7 +146,7 @@ func TestAuthSuccess(t *testing.T) {
 	for _, cs := range testCases {
 		t.Run(cs.name, func(t *testing.T) {
 			stub := NewStubborn(Config{
-				Dialerf: func() (DuplexConnector, error) {
+				Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 					return &MockConn{}, nil
 				},
 				AuthTimeOut: time.Second,
@@ -202,7 +202,7 @@ func TestAuthFail(t *testing.T) {
 		t.Run(cs.name, func(t *testing.T) {
 
 			stub := NewStubborn(Config{
-				Dialerf: func() (DuplexConnector, error) {
+				Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 					return &MockConn{}, nil
 				},
 				AuthTimeOut: time.Second * time.Duration(rand.Intn(3)),
@@ -237,7 +237,7 @@ func TestAuthFail(t *testing.T) {
 
 func TestKeepAliveSuccess(t *testing.T) {
 	stub := NewStubborn(Config{
-		Dialerf: func() (DuplexConnector, error) {
+		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
 		URL: "test",
@@ -277,7 +277,7 @@ func TestKeepAliveSuccess(t *testing.T) {
 
 func TestKeepAliveFail(t *testing.T) {
 	stub := NewStubborn(Config{
-		Dialerf: func() (DuplexConnector, error) {
+		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
 		URL: "test",
@@ -312,7 +312,7 @@ func TestKeepAliveFail(t *testing.T) {
 
 func TestKeepAliveCustomPingSuccess(t *testing.T) {
 	stub := NewStubborn(Config{
-		Dialerf: func() (DuplexConnector, error) {
+		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
 		URL: "test",
@@ -368,7 +368,7 @@ func TestKeepAliveCustomPingFail(t *testing.T) {
 		t.Run(cs.name, func(t *testing.T) {
 
 			stub := NewStubborn(Config{
-				Dialerf: func() (DuplexConnector, error) {
+				Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 					return &MockConn{}, nil
 				},
 				URL: "test",
@@ -404,7 +404,7 @@ func TestKeepAliveCustomPingFail(t *testing.T) {
 
 func TestKeepAliveCustomPongSuccess(t *testing.T) {
 	stub := NewStubborn(Config{
-		Dialerf: func() (DuplexConnector, error) {
+		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
 		URL: "test",
@@ -472,7 +472,7 @@ func TestKeepAliveCustomPongFail(t *testing.T) {
 	for _, cs := range testCases {
 		t.Run(cs.name, func(t *testing.T) {
 			stub := NewStubborn(Config{
-				Dialerf: func() (DuplexConnector, error) {
+				Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 					return &MockConn{}, nil
 				},
 				URL: "test",
@@ -539,7 +539,7 @@ func TestKeepAliveCustomPongFail(t *testing.T) {
 
 func TestSubscriptionSuccess(t *testing.T) {
 	stub := NewStubborn(Config{
-		Dialerf: func() (DuplexConnector, error) {
+		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
 		URL: "test",
@@ -580,7 +580,7 @@ func TestSubscriptionSuccess(t *testing.T) {
 
 func TestNoSubscriptionFail(t *testing.T) {
 	stub := NewStubborn(Config{
-		Dialerf: func() (DuplexConnector, error) {
+		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
 		URL: "test",
@@ -615,7 +615,7 @@ func TestNoSubscriptionFail(t *testing.T) {
 
 func TestWrongSubscriptionFail(t *testing.T) {
 	stub := NewStubborn(Config{
-		Dialerf: func() (DuplexConnector, error) {
+		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
 		URL: "test",
@@ -651,7 +651,7 @@ func TestWrongSubscriptionFail(t *testing.T) {
 
 func TestSubscriptionReconnectSuccess(t *testing.T) {
 	stub := NewStubborn(Config{
-		Dialerf: func() (DuplexConnector, error) {
+		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{isFailable: true}, nil
 		},
 		IsReconnectable: true,
@@ -698,7 +698,7 @@ func TestSubscriptionReconnectSuccess(t *testing.T) {
 func TestSubscriptionReconnectPanicSuccess(t *testing.T) {
 	mockConn := &MockConn{}
 	stub := NewStubborn(Config{
-		Dialerf: func() (DuplexConnector, error) {
+		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return mockConn, nil
 		},
 		IsReconnectable: false, // unexpected reconnect due panic
