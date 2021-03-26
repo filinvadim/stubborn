@@ -757,6 +757,44 @@ func TestDecompressionSuccess(t *testing.T) {
 	// TODO
 }
 
+func TestReadDeadline(t *testing.T) {
+	defaultReadDeadline := (time.Hour * 24) * 365
+
+	mock := &MockConn{}
+	stub := NewStubborn(Config{
+		Dialerf: func() (DuplexConnector, error) {
+			return mock, nil
+		},
+		IsReconnectable: true,
+		URL:             "test",
+	})
+	defer stub.Close()
+
+	rx := make(chan struct{})
+	stub.SetMessageHandler(func(resp []byte) {
+		rx <- struct{}{}
+	})
+
+	err := stub.Connect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatal("did not receive in 5seconds")
+	case <-rx:
+	}
+
+	roundDeadline := mock.deadline.Round(time.Second)
+	roundExpectedDeadline := time.Now().Add(defaultReadDeadline).Round(time.Second)
+
+	if !roundDeadline.Equal(roundExpectedDeadline) {
+		t.Fatalf(`Deadlines don't match, expected "%v" have "%v"`, roundExpectedDeadline, roundDeadline)
+	}
+
+}
+
 //////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////MOCK///////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////
@@ -774,6 +812,12 @@ type MockConn struct {
 	subscribed     bool
 	pinged         bool
 	customPinged   bool
+	deadline       time.Time
+}
+
+func (mc *MockConn) SetReadDeadline(t time.Time) error {
+	mc.deadline = t
+	return nil
 }
 
 func (mc *MockConn) ReadMessage() (messageType int, p []byte, err error) {

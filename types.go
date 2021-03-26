@@ -16,6 +16,7 @@ type (
 		Close() error
 		ReadMessage() (messageType int, p []byte, err error)
 		WriteMessage(messageType int, data []byte) error
+		SetReadDeadline(t time.Time) error
 	}
 
 	KeepAlive struct {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
+
 	//sync "github.com/sasha-s/go-deadlock"
 	"time"
 )
@@ -33,6 +34,8 @@ type Config struct {
 	// use your favourite client
 	Dialerf     DialerFunc
 	AuthTimeOut time.Duration
+	// read deadline, default is 1 year
+	ReadTimeOut time.Duration
 	// it is easier to define expected error because exceptions always unexpected :)
 	UnimportantErrs []error
 }
@@ -98,6 +101,9 @@ func NewStubborn(
 	}
 	if s.config.MessageType == 0 {
 		s.config.MessageType = TextMessage
+	}
+	if s.config.ReadTimeOut == 0 {
+		s.config.ReadTimeOut = (time.Hour * 24) * 365 // 1 average year
 	}
 
 	return s
@@ -293,7 +299,7 @@ func (s *Client) read() (messageType int, p []byte, err error) {
 	if s == nil {
 		return 0, nil, errNotInit
 	}
-
+	s.conn.SetReadDeadline(time.Now().Add(s.config.ReadTimeOut))
 	messageType, p, err = s.conn.ReadMessage()
 	return
 }
