@@ -245,21 +245,32 @@ func (s *Client) keepAlive() {
 	aliveTicker := time.NewTicker(30 * time.Minute)
 	defer aliveTicker.Stop()
 
+	// we can't rely on select random therefore pinging must be called first despite everything
+	go func() {
+		for {
+			select {
+			case <-s.keep.Tick:
+				if s.keep.CustomPing == nil {
+					err := s.Send(PingMessage, []byte{})
+					if err != nil {
+						s.errChan <- minorErr(err)
+					}
+					continue
+				}
+				s.print("custom ping sent")
+				err := s.Send(s.keep.CustomPing())
+				if err != nil {
+					s.errChan <- majorErr(err)
+				}
+			case <-s.stopKeepAlive:
+				s.print("pinging stopped")
+				return
+			}
+		}
+	}()
+
 	for {
 		select {
-		case <-s.keep.Tick:
-			if s.keep.CustomPing == nil {
-				err := s.Send(PingMessage, []byte{})
-				if err != nil {
-					s.errChan <- minorErr(err)
-				}
-				continue
-			}
-			s.print("custom ping sent")
-			err := s.Send(s.keep.CustomPing())
-			if err != nil {
-				s.errChan <- majorErr(err)
-			}
 		case <-aliveTicker.C:
 			s.timeMx.Lock()
 			s.print(
@@ -271,7 +282,6 @@ func (s *Client) keepAlive() {
 			s.print("keep alive stopped")
 			return
 		}
-
 	}
 }
 
