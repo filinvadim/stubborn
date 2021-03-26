@@ -169,7 +169,7 @@ func (s *Client) Connect(ctx context.Context) (err error) {
 
 	dialerf := s.config.Dialerf
 
-	s.conn, err = dialerf()
+	s.conn, err = dialerf(s.ctx)
 	if err != nil {
 		return err
 	}
@@ -316,7 +316,7 @@ func (s *Client) reconnect() {
 		}
 
 		var err error
-		s.conn, err = dialerf()
+		s.conn, err = dialerf(s.ctx)
 		if err != nil {
 			// just warn if not reconnectable
 			if !s.config.IsReconnectable {

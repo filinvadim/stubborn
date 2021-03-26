@@ -1,6 +1,7 @@
 package stubborn
 
 import (
+	"context"
 	"time"
 )
 
@@ -24,7 +25,7 @@ type (
 		CustomPong func(msgTp int, data []byte) (msgType int, payload []byte)
 	}
 
-	DialerFunc func() (DuplexConnector, error)
+	DialerFunc func(ctx context.Context) (DuplexConnector, error)
 
 	AuthHandler    func() (req []byte, resp []byte, err error)
 	MessageHandler func(resp []byte)
