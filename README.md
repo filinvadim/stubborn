@@ -201,22 +201,15 @@ func HuobiTradesSubscribe(key, secret string) (err error) {
 ```
 * Okex
 ```
-func OkexOrdersSubscribe(instruments []string, key, secret, pass string) (err error) {
+func OkexOrdersSubscribe(key, secret, pass string) (err error) {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, syscall.SIGTERM, syscall.SIGINT)
 	
-	var (
-		url  = "wss://real.okex.com:8443/ws/v3?compress=true"
-		args = make([]string, 0)
-	)
-
-	for _, i := range instruments {
-		args = append(args, "spot/order:"+i)
-	}
-
+	var url  = "wss://real.okex.com:8443/ws/v3?compress=true"
+	
 	subOp := BaseOp{
-		Op:   "subcribe",
-		Args: args,
+		Op:   "subscribe",
+		Args: []string{"spot/order:ETH-USDT"},
 	}
 
 	subMsg, _ := json.Marshal(subOp)
@@ -252,7 +245,7 @@ func OkexOrdersSubscribe(instruments []string, key, secret, pass string) (err er
 		}
 
 		b := BaseOp{
-			Op:   loginOp,
+			Op:   "login",
 			Args: []string{key, pass, et, signed},
 		}
 		req, err = json.Marshal(b)
