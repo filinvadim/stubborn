@@ -193,8 +193,7 @@ func (s *Client) Connect(ctx context.Context) (err error) {
 
 	err = s.auth()
 	if err != nil {
-		s.errChan <- criticalErr(err)
-		return
+		return err
 	}
 
 	if s.keep != nil {

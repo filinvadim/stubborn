@@ -205,7 +205,7 @@ func TestAuthFail(t *testing.T) {
 				Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 					return &MockConn{}, nil
 				},
-				AuthTimeOut: time.Second * time.Duration(rand.Intn(3)),
+				AuthTimeOut: time.Second * time.Duration(3),
 				URL:         "test",
 			})
 
@@ -220,16 +220,11 @@ func TestAuthFail(t *testing.T) {
 			})
 
 			err := stub.Connect(context.Background())
-			if err != nil {
+			if err == nil {
 				stub.Close()
-				t.Fatal(err)
+				t.Fatal("must be auth timeout error")
 			}
-			select {
-			case <-time.After(2 * time.Second):
-				stub.Close()
-				t.Fatal("wait auth error timeout")
-			case err = <-errChan:
-			}
+
 			stub.Close()
 		})
 	}
