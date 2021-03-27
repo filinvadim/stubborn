@@ -256,7 +256,7 @@ func TestKeepAliveSuccess(t *testing.T) {
 	})
 
 	stub.SetKeepAliveHandler(KeepAlive{
-		Tick:       time.After(time.Second / 4),
+		Tick:       time.Second / 4,
 		CustomPing: nil,
 		CustomPong: nil,
 	})
@@ -332,7 +332,7 @@ func TestKeepAliveCustomPingSuccess(t *testing.T) {
 	})
 
 	stub.SetKeepAliveHandler(KeepAlive{
-		Tick: time.After(time.Second / 4),
+		Tick: time.Second / 4,
 		CustomPing: func() (msgType int, payload []byte) {
 			return PingMessage, []byte(customPingMessage)
 		},
@@ -380,7 +380,7 @@ func TestKeepAliveCustomPingFail(t *testing.T) {
 				}
 			})
 			stub.SetKeepAliveHandler(KeepAlive{
-				Tick: time.After(time.Second / 4),
+				Tick: time.Second / 4,
 				CustomPing: func() (msgType int, payload []byte) {
 					return cs.msgType, cs.payload
 				},

@@ -47,7 +47,6 @@ type Client struct {
 	// service fields
 	ctx           context.Context
 	msgMx         *sync.Mutex
-	once          *sync.Once
 	stopRead      chan struct{}
 	stopReadWait  chan struct{}
 	stopKeepAlive chan struct{}
@@ -89,7 +88,6 @@ func NewStubborn(
 	s.reconnectedCh = make(chan struct{}, 1)
 	s.msgMx = new(sync.Mutex)
 	s.timeMx = new(sync.Mutex)
-	s.once = new(sync.Once)
 	s.config = conf
 
 	s.print = s.config.Print
@@ -175,35 +173,33 @@ func (s *Client) Connect(ctx context.Context) (err error) {
 	}
 	s.print("connection established")
 
-	s.once.Do(func() {
-		s.timeAlive = time.Now()
+	s.timeAlive = time.Now()
 
-		go s.handleErrors()
+	go s.handleErrors()
 
-		if s.config.IsReconnectable {
-			rand.Seed(time.Now().UTC().UnixNano())
-			// should be explicitly configurable or nah?
-			s.backoff = &backoff{
-				Exponentiation: 1.5,
-				Jitter:         true,
-				Min:            2 * time.Second,
-				Max:            10 * time.Minute,
-			}
-
-			go s.reconnect()
-		}
-		go s.readLoop()
-
-		err = s.auth()
-		if err != nil {
-			s.errChan <- criticalErr(err)
-			return
+	if s.config.IsReconnectable {
+		rand.Seed(time.Now().UTC().UnixNano())
+		// should be explicitly configurable or nah?
+		s.backoff = &backoff{
+			Exponentiation: 1.5,
+			Jitter:         true,
+			Min:            2 * time.Second,
+			Max:            10 * time.Minute,
 		}
 
-		if s.keep != nil {
-			go s.keepAlive()
-		}
-	})
+		go s.reconnect()
+	}
+	go s.readLoop()
+
+	err = s.auth()
+	if err != nil {
+		s.errChan <- criticalErr(err)
+		return
+	}
+
+	if s.keep != nil {
+		go s.keepAlive()
+	}
 
 	return nil
 }
@@ -239,7 +235,7 @@ func (s *Client) auth() error {
 }
 
 func (s *Client) keepAlive() {
-	if s.keep.Tick == nil {
+	if s.keep.Tick == 0 {
 		return
 	}
 	aliveTicker := time.NewTicker(30 * time.Minute)
@@ -249,7 +245,7 @@ func (s *Client) keepAlive() {
 	go func() {
 		for {
 			select {
-			case <-s.keep.Tick:
+			case <-time.Tick(s.keep.Tick):
 				if s.keep.CustomPing == nil {
 					err := s.Send(PingMessage, []byte{})
 					if err != nil {

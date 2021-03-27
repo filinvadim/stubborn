@@ -20,7 +20,7 @@ type (
 	}
 
 	KeepAlive struct {
-		Tick       <-chan time.Time
+		Tick       time.Duration
 		CustomPing func() (msgType int, payload []byte)
 		CustomPong func(msgTp int, data []byte) (msgType int, payload []byte)
 	}
