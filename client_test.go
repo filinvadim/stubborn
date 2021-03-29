@@ -14,7 +14,7 @@ import (
 const (
 	countMessages = 5
 
-	sampleMessage     = "websocket sample message"
+	sampleMessage     = "[websocket sample message, websocket sample message, websocket sample message, websocket sample message, websocket sample message]"
 	authSuccessString = "auth success"
 	authReqType       = "auth"
 	pinged            = "pinged"

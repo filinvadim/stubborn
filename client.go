@@ -430,7 +430,11 @@ func (s *Client) readLoop() {
 				payload = msg
 			}
 
-			s.print("message received", string(payload))
+			if len(payload) > 80 {
+				s.print("message received", string(payload[:80]))
+			} else {
+				s.print("message received", string(payload))
+			}
 
 			tp, p := s.checkPong(msgType, payload)
 			if tp != 0 {
