@@ -406,6 +406,12 @@ func (s *Client) readLoop() {
 				break
 			}
 
+			if msgType == PingMessage {
+				s.print("ping received")
+				s.Send(PongMessage, []byte{})
+				break
+			}
+
 			if msg == nil {
 				break
 			}
@@ -436,9 +442,9 @@ func (s *Client) readLoop() {
 				s.print("message received", string(payload))
 			}
 
-			tp, p := s.checkPong(msgType, payload)
+			tp, p := s.checkCustomPing(msgType, payload)
 			if tp != 0 {
-				s.print("ping received")
+				s.print("custom ping received")
 				if err := s.Send(tp, p); err != nil {
 					s.errChan <- majorErr(err)
 				}
@@ -454,7 +460,7 @@ func (s *Client) readLoop() {
 	}
 }
 
-func (s *Client) checkPong(msgType int, payload []byte) (int, []byte) {
+func (s *Client) checkCustomPing(msgType int, payload []byte) (int, []byte) {
 	if s.keep == nil {
 		return 0, nil
 	}
@@ -463,7 +469,6 @@ func (s *Client) checkPong(msgType int, payload []byte) (int, []byte) {
 	}
 
 	return s.keep.CustomPong(msgType, payload)
-
 }
 
 func (s *Client) isUnimportant(err error) (ok bool) {
