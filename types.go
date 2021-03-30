@@ -31,5 +31,15 @@ type (
 	MessageHandler func(resp []byte)
 	ErrorHandler   func(err error)
 
-	PrintFunc func(args ...interface{})
+	CustomLogger interface {
+		Infoln(args ...interface{})
+		Debugln(args ...interface{})
+		Errorln(args ...interface{})
+	}
+
+	defaultLogger struct{}
 )
+
+func (defaultLogger) Infoln(args ...interface{})  {}
+func (defaultLogger) Debugln(args ...interface{}) {}
+func (defaultLogger) Errorln(args ...interface{}) {}

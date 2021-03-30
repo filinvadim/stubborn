@@ -29,7 +29,7 @@ type Config struct {
 	// default message type
 	MessageType int
 	// use your favourite logger
-	Print PrintFunc
+	Logger CustomLogger
 	// use your favourite client
 	Dialerf     DialerFunc
 	AuthTimeOut time.Duration
@@ -42,7 +42,7 @@ type Client struct {
 	conn DuplexConnector
 
 	config Config
-	print  PrintFunc
+	l      CustomLogger
 
 	// service fields
 	ctx           context.Context
@@ -90,9 +90,9 @@ func NewStubborn(
 	s.timeMx = new(sync.Mutex)
 	s.config = conf
 
-	s.print = s.config.Print
-	if s.print == nil {
-		s.print = func(args ...interface{}) {}
+	s.l = s.config.Logger
+	if s.l == nil {
+		s.l = defaultLogger{}
 	}
 	if s.config.MessageType == 0 {
 		s.config.MessageType = TextMessage
@@ -171,7 +171,7 @@ func (s *Client) Connect(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	s.print("connection established")
+	s.l.Infoln("connection established")
 
 	s.timeAlive = time.Now()
 
@@ -252,13 +252,13 @@ func (s *Client) keepAlive() {
 					}
 					continue
 				}
-				s.print("custom ping sent")
+				s.l.Debugln("custom ping sent")
 				err := s.Send(s.keep.CustomPing())
 				if err != nil {
 					s.errChan <- majorErr(err)
 				}
 			case <-s.stopKeepAlive:
-				s.print("pinging stopped")
+				s.l.Debugln("pinging stopped")
 				return
 			}
 		}
@@ -268,13 +268,13 @@ func (s *Client) keepAlive() {
 		select {
 		case <-aliveTicker.C:
 			s.timeMx.Lock()
-			s.print(
+			s.l.Infoln(
 				"ws connection alive ",
 				time.Now().Sub(s.timeAlive).Round(time.Minute),
 			)
 			s.timeMx.Unlock()
 		case <-s.stopKeepAlive:
-			s.print("keep alive stopped")
+			s.l.Debugln("keep alive stopped")
 			return
 		}
 	}
@@ -308,7 +308,7 @@ func (s *Client) reconnect() {
 		if s.isClosed {
 			return
 		}
-		s.print("reconnecting...")
+		s.l.Infoln("reconnecting...")
 		dialerf := s.config.Dialerf
 
 		if err := s.conn.Close(); err != nil {
@@ -325,7 +325,7 @@ func (s *Client) reconnect() {
 		if err != nil {
 			// just warn if not reconnectable
 			if !s.config.IsReconnectable {
-				s.print(criticalErr(err))
+				s.l.Errorln(criticalErr(err))
 				return
 			}
 			s.critErrChan <- criticalErr(err)
@@ -346,7 +346,7 @@ func (s *Client) reconnect() {
 
 		// sending notification about reconnect event by error
 		s.errChan <- criticalErr(cErr)
-		s.print("reconnected")
+		s.l.Infoln("reconnected")
 
 		// reconnect once only if panic occurs
 		if !s.config.IsReconnectable {
@@ -354,7 +354,7 @@ func (s *Client) reconnect() {
 		}
 
 	}
-	s.print("reconnect stopped")
+	s.l.Debugln("reconnect stopped")
 }
 
 func (s *Client) handleErrors() {
@@ -363,7 +363,7 @@ func (s *Client) handleErrors() {
 			s.errorHandler(err)
 		}
 	}
-	s.print("errors handling stopped")
+	s.l.Debugln("errors handling stopped")
 }
 
 func (s *Client) readLoop() {
@@ -395,7 +395,7 @@ func (s *Client) readLoop() {
 		default:
 			msgType, msg, err := s.read()
 			if err != nil {
-				s.print(err.Error())
+				s.l.Errorln(err.Error())
 				if s.isUnimportant(err) {
 					break
 				}
@@ -407,7 +407,7 @@ func (s *Client) readLoop() {
 			}
 
 			if msgType == PingMessage {
-				s.print("ping received")
+				s.l.Debugln("ping received")
 				s.Send(PongMessage, msg)
 				break
 			}
@@ -437,14 +437,14 @@ func (s *Client) readLoop() {
 			}
 
 			if len(payload) > 80 {
-				s.print("message received", string(payload[:80]))
+				s.l.Debugln("message received", string(payload[:80]))
 			} else {
-				s.print("message received", string(payload))
+				s.l.Debugln("message received", string(payload))
 			}
 
 			tp, p := s.checkCustomPing(msgType, payload)
 			if tp != 0 {
-				s.print("custom ping received")
+				s.l.Debugln("custom ping received")
 				if err := s.Send(tp, p); err != nil {
 					s.errChan <- majorErr(err)
 				}
@@ -538,7 +538,7 @@ func (s *Client) Close() {
 	s.isClosed = true
 
 	close(s.stopRead)
-	s.print("stubborn closing...")
+	s.l.Debugln("stubborn closing...")
 	select {
 	case <-s.stopReadWait:
 	case <-time.After(time.Second * 5):
@@ -558,5 +558,5 @@ func (s *Client) Close() {
 	s.waitErrors()
 	close(s.errChan)
 	close(s.authChan)
-	s.print("stubborn closed")
+	s.l.Infoln("stubborn closed")
 }

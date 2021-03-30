@@ -58,10 +58,6 @@ func main() {
 		URL:             url,
 		IsReconnectable: true,
 		MessageType:     stubborn.TextMessage,
-		Print: func(args ...interface{}) {
-			fmt.Println(args)
-			return
-		},
 		Dialerf: func() (stubborn.WSConnector, error) {
 			return NewH2(ctx, url)
 		},
