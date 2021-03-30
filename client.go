@@ -408,7 +408,7 @@ func (s *Client) readLoop() {
 
 			if msgType == PingMessage {
 				s.print("ping received")
-				s.Send(PongMessage, []byte{})
+				s.Send(PongMessage, msg)
 				break
 			}
 

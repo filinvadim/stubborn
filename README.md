@@ -38,7 +38,7 @@ the duplex protocols using various types of clients.
 * [Echo http2 client example](https://github.com/filinvadim/stubborn/tree/master/example/http2/main.go)
 
 
-### Crypto exchange examples
+### Crypto exchange pseudocode examples
 
 * Binance
 ```
