@@ -57,9 +57,6 @@ func BinanceStream(key, secret string) (err error) {
 			return
 		},
 		Dialerf: func(ctx context.Context) (stubborn.DuplexConnector, error) {
-			if stream != nil {
-				stream.DeleteStream()
-			}
 			stream, err = b.StartUserDataStream(key, secret)
 			if err != nil {
 				return nil, err
@@ -94,7 +91,6 @@ func BinanceStream(key, secret string) (err error) {
 	<-interrupt
     
 	defer func() {
-		stream.DeleteStream()
 		stub.Close()
 	}
 	return nil

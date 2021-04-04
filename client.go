@@ -304,6 +304,21 @@ func (s *Client) read() (messageType int, p []byte, err error) {
 }
 
 func (s *Client) reconnect() {
+	defer func() {
+		if r := recover(); r != nil {
+			if s.isClosed {
+				return
+			}
+			if !s.config.IsReconnectable {
+				go s.reconnect()
+			}
+
+			s.critErrChan <- fmt.Errorf("%v", r)
+			s.errChan <- criticalErr(fmt.Errorf("%v", r))
+			<-s.reconnectedCh
+		}
+	}()
+
 	for cErr := range s.critErrChan {
 		if s.isClosed {
 			return
@@ -311,10 +326,12 @@ func (s *Client) reconnect() {
 		s.l.Infoln("reconnecting...")
 		dialerf := s.config.Dialerf
 
-		if err := s.conn.Close(); err != nil {
-			s.errChan <- minorErr(err)
+		if s.conn != nil {
+			if err := s.conn.Close(); err != nil {
+				s.errChan <- minorErr(err)
+			}
 		}
-
+		
 		if s.config.IsReconnectable {
 			// duration: minTime = minTime ** exponential
 			time.Sleep(s.backoff.Duration())
