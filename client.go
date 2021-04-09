@@ -46,7 +46,7 @@ type Client struct {
 
 	// service fields
 	ctx           context.Context
-	msgMx         *sync.Mutex
+	writeMx       *sync.Mutex
 	stopRead      chan struct{}
 	stopReadWait  chan struct{}
 	stopKeepAlive chan struct{}
@@ -86,7 +86,7 @@ func NewStubborn(
 	s.authChan = make(chan struct{}, 1)
 	s.errChan = make(chan error, 100)
 	s.reconnectedCh = make(chan struct{}, 1)
-	s.msgMx = new(sync.Mutex)
+	s.writeMx = new(sync.Mutex)
 	s.timeMx = new(sync.Mutex)
 	s.config = conf
 
@@ -252,10 +252,15 @@ func (s *Client) keepAlive() {
 					}
 					continue
 				}
-				s.l.Debugln("custom ping sent")
-				err := s.Send(s.keep.CustomPing())
+
+				// prevent race condition for custom pings
+				s.writeMx.Lock()
+				err := s.conn.WriteMessage(s.keep.CustomPing())
+				s.writeMx.Unlock()
 				if err != nil {
 					s.errChan <- majorErr(err)
+				} else {
+					s.l.Debugln("custom ping sent")
 				}
 			case <-s.stopKeepAlive:
 				s.l.Debugln("pinging stopped")
@@ -288,9 +293,9 @@ func (s *Client) Send(msgType int, message []byte) error {
 		return nil
 	}
 
-	s.msgMx.Lock()
+	s.writeMx.Lock()
 	err := s.conn.WriteMessage(msgType, message)
-	s.msgMx.Unlock()
+	s.writeMx.Unlock()
 	return err
 }
 
@@ -331,7 +336,7 @@ func (s *Client) reconnect() {
 				s.errChan <- minorErr(err)
 			}
 		}
-		
+
 		if s.config.IsReconnectable {
 			// duration: minTime = minTime ** exponential
 			time.Sleep(s.backoff.Duration())
