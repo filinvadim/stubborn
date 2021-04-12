@@ -13,6 +13,7 @@ import (
 
 var (
 	errNotInit          = errors.New("stubborn wasn't initialized")
+	errNotConnected          = errors.New("stubborn is not connected")
 	errAuthTimeout      = errors.New("auth timeout")
 	errNoMessageHandler = errors.New("message handler wasn't set")
 	errNoURL            = errors.New("connection URL wasn't set")
@@ -243,6 +244,10 @@ func (s *Client) keepAlive() {
 	// we can't rely on select random therefore pinging must be called first despite everything
 	go func() {
 		for {
+			if s.conn == nil {
+				time.Sleep(time.Second)
+				continue
+			}
 			select {
 			case <-time.Tick(s.keep.Tick):
 				if s.keep.CustomPing == nil {
@@ -289,6 +294,9 @@ func (s *Client) Send(msgType int, message []byte) error {
 	if s == nil {
 		return errNotInit
 	}
+	if s.conn == nil {
+		return errNotConnected
+	}
 	if s.isClosed {
 		return nil
 	}
@@ -302,6 +310,9 @@ func (s *Client) Send(msgType int, message []byte) error {
 func (s *Client) read() (messageType int, p []byte, err error) {
 	if s == nil {
 		return 0, nil, errNotInit
+	}
+	if s.conn == nil {
+		return 0, nil, errNotConnected
 	}
 
 	messageType, p, err = s.conn.ReadMessage()
