@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"runtime/debug"
 	"sync"
 	//sync "github.com/sasha-s/go-deadlock"
 	"time"
@@ -13,7 +14,7 @@ import (
 
 var (
 	errNotInit          = errors.New("stubborn wasn't initialized")
-	errNotConnected          = errors.New("stubborn is not connected")
+	errNotConnected     = errors.New("stubborn is not connected")
 	errAuthTimeout      = errors.New("auth timeout")
 	errNoMessageHandler = errors.New("message handler wasn't set")
 	errNoURL            = errors.New("connection URL wasn't set")
@@ -240,14 +241,11 @@ func (s *Client) keepAlive() {
 	}
 	aliveTicker := time.NewTicker(30 * time.Minute)
 	defer aliveTicker.Stop()
+	var err error
 
 	// we can't rely on select random therefore pinging must be called first despite everything
 	go func() {
 		for {
-			if s.conn == nil {
-				time.Sleep(time.Second)
-				continue
-			}
 			select {
 			case <-time.Tick(s.keep.Tick):
 				if s.keep.CustomPing == nil {
@@ -260,13 +258,16 @@ func (s *Client) keepAlive() {
 
 				// prevent race condition for custom pings
 				s.writeMx.Lock()
-				err := s.conn.WriteMessage(s.keep.CustomPing())
-				s.writeMx.Unlock()
-				if err != nil {
-					s.errChan <- majorErr(err)
-				} else {
-					s.l.Debugln("custom ping sent")
+				if s.conn != nil {
+					err = s.conn.WriteMessage(s.keep.CustomPing())
+					if err != nil {
+						s.errChan <- majorErr(err)
+					} else {
+						s.l.Debugln("custom ping sent")
+					}
 				}
+				s.writeMx.Unlock()
+
 			case <-s.stopKeepAlive:
 				s.l.Debugln("pinging stopped")
 				return
@@ -290,7 +291,12 @@ func (s *Client) keepAlive() {
 	}
 }
 
-func (s *Client) Send(msgType int, message []byte) error {
+func (s *Client) Send(msgType int, message []byte) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v \n %s", r, string(debug.Stack()))
+		}
+	}()
 	if s == nil {
 		return errNotInit
 	}
@@ -302,7 +308,7 @@ func (s *Client) Send(msgType int, message []byte) error {
 	}
 
 	s.writeMx.Lock()
-	err := s.conn.WriteMessage(msgType, message)
+	err = s.conn.WriteMessage(msgType, message)
 	s.writeMx.Unlock()
 	return err
 }
@@ -330,7 +336,7 @@ func (s *Client) reconnect() {
 			}
 
 			s.critErrChan <- fmt.Errorf("%v", r)
-			s.errChan <- criticalErr(fmt.Errorf("%v", r))
+			s.errChan <- criticalErr(fmt.Errorf("%v \n %s", r, string(debug.Stack())))
 			<-s.reconnectedCh
 		}
 	}()
@@ -410,7 +416,7 @@ func (s *Client) readLoop() {
 			}
 
 			s.critErrChan <- fmt.Errorf("%v", r)
-			s.errChan <- criticalErr(fmt.Errorf("%v", r))
+			s.errChan <- criticalErr(fmt.Errorf("%v \n %s", r, string(debug.Stack())))
 			<-s.reconnectedCh
 			go s.readLoop()
 		}
@@ -568,6 +574,11 @@ func minorErr(err error) error {
 }
 
 func (s *Client) Close() {
+	defer func() {
+		if r := recover(); r != nil {
+			s.errChan <- minorErr(fmt.Errorf("%v \n %s", r, string(debug.Stack())))
+		}
+	}()
 	s.isClosed = true
 
 	close(s.stopRead)
