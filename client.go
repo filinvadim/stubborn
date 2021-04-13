@@ -421,9 +421,6 @@ func (s *Client) readLoop() {
 			go s.readLoop()
 		}
 	}()
-	if s.conn == nil {
-		return
-	}
 
 	for {
 		select {
@@ -432,6 +429,11 @@ func (s *Client) readLoop() {
 			return
 
 		default:
+			if s.conn == nil {
+				time.Sleep(5*time.Second)
+				s.errChan <- errNotConnected
+				continue
+			}
 			msgType, msg, err := s.read()
 			if err != nil {
 				s.l.Errorln(err.Error())
