@@ -548,7 +548,7 @@ func (s *Client) checkAuth(data []byte) (ok bool) {
 	opts := DefaultJSONOptions()
 	// SupersetMatch - means first item is a superset of a second item (first contains second).
 	diff, _ := CompareJSON(data, s.authResp, &opts)
-	if diff == SupersetMatch {
+	if diff == SupersetMatch || diff == FullMatch{
 		s.authChan <- struct{}{}
 		return true
 	}
