@@ -430,7 +430,7 @@ func (s *Client) readLoop() {
 
 		default:
 			if s.conn == nil {
-				time.Sleep(5*time.Second)
+				time.Sleep(5 * time.Second)
 				s.errChan <- errNotConnected
 				continue
 			}
@@ -546,8 +546,9 @@ func (s *Client) checkAuth(data []byte) (ok bool) {
 	}
 
 	opts := DefaultJSONOptions()
-	diff, _ := CompareJSON(s.authResp, data, &opts)
-	if diff == FullMatch {
+	// SupersetMatch - means first item is a superset of a second item (first contains second).
+	diff, _ := CompareJSON(data, s.authResp, &opts)
+	if diff == SupersetMatch {
 		s.authChan <- struct{}{}
 		return true
 	}
