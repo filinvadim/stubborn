@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"testing"
 	"time"
 )
@@ -36,7 +37,6 @@ func TestConnectSuccess(t *testing.T) {
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
-		URL: "test",
 	})
 	defer stub.Close()
 
@@ -64,7 +64,6 @@ func TestConnectFailNoDialer(t *testing.T) {
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return nil, errNoDialer
 		},
-		URL: "test",
 	})
 	defer stub.Close()
 
@@ -84,7 +83,6 @@ func TestConnectFailNoMessageHandler(t *testing.T) {
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
-		URL: "test",
 	})
 
 	errChan := make(chan error, 1)
@@ -102,23 +100,6 @@ func TestConnectFailNoMessageHandler(t *testing.T) {
 	case err = <-errChan:
 		t.Fatal(err)
 	case <-time.After(100 * time.Millisecond):
-	}
-}
-
-func TestConnectFailNoURL(t *testing.T) {
-	stub := NewStubborn(Config{
-		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-			return &MockConn{}, nil
-		},
-		URL: "",
-	})
-	stub.SetMessageHandler(func(resp []byte) {})
-	err := stub.Connect(context.Background())
-	if err == nil {
-		t.Fatal(errMust)
-	}
-	if err.Error() != "connection URL wasn't set" {
-		t.Fatal(errMust)
 	}
 }
 
@@ -150,7 +131,6 @@ func TestAuthSuccess(t *testing.T) {
 					return &MockConn{}, nil
 				},
 				AuthTimeOut: time.Second,
-				URL:         "test",
 			})
 
 			errChan := make(chan error, 1)
@@ -206,7 +186,6 @@ func TestAuthFail(t *testing.T) {
 					return &MockConn{}, nil
 				},
 				AuthTimeOut: time.Second * time.Duration(3),
-				URL:         "test",
 			})
 
 			stub.SetErrorHandler(func(err error) {
@@ -235,7 +214,6 @@ func TestKeepAliveSuccess(t *testing.T) {
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
-		URL: "test",
 	})
 	defer stub.Close()
 
@@ -275,7 +253,6 @@ func TestKeepAliveFail(t *testing.T) {
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
-		URL: "test",
 	})
 	defer stub.Close()
 
@@ -310,7 +287,6 @@ func TestKeepAliveCustomPingSuccess(t *testing.T) {
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
-		URL: "test",
 	})
 	defer stub.Close()
 
@@ -366,7 +342,6 @@ func TestKeepAliveCustomPingFail(t *testing.T) {
 				Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 					return &MockConn{}, nil
 				},
-				URL: "test",
 			})
 
 			stub.SetMessageHandler(func(resp []byte) {
@@ -402,7 +377,6 @@ func TestKeepAliveCustomPongSuccess(t *testing.T) {
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
-		URL: "test",
 	})
 	defer stub.Close()
 
@@ -470,7 +444,6 @@ func TestKeepAliveCustomPongFail(t *testing.T) {
 				Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 					return &MockConn{}, nil
 				},
-				URL: "test",
 			})
 
 			missedPongChan := make(chan struct{}, 1)
@@ -537,7 +510,6 @@ func TestSubscriptionSuccess(t *testing.T) {
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
-		URL: "test",
 	})
 	defer stub.Close()
 
@@ -578,7 +550,6 @@ func TestNoSubscriptionFail(t *testing.T) {
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
-		URL: "test",
 	})
 	defer stub.Close()
 
@@ -613,7 +584,6 @@ func TestWrongSubscriptionFail(t *testing.T) {
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return &MockConn{}, nil
 		},
-		URL: "test",
 	})
 	defer stub.Close()
 
@@ -650,7 +620,6 @@ func TestSubscriptionReconnectSuccess(t *testing.T) {
 			return &MockConn{isFailable: true}, nil
 		},
 		IsReconnectable: true,
-		URL:             "test",
 	})
 	defer stub.Close()
 
@@ -697,7 +666,6 @@ func TestSubscriptionReconnectPanicSuccess(t *testing.T) {
 			return mockConn, nil
 		},
 		IsReconnectable: false, // unexpected reconnect due panic
-		URL:             "test",
 	})
 	defer stub.Close()
 
@@ -749,7 +717,37 @@ func TestSubscriptionReconnectPanicSuccess(t *testing.T) {
 }
 
 func TestDecompressionSuccess(t *testing.T) {
-	// TODO
+	compressed, err := GZipCompress("testInput")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+	dataType := http.DetectContentType(compressed)
+	if dataType != "application/x-gzip" {
+		t.Fatal("unknown compression type")
+		return
+	}
+	_, err = GZipDecompress(compressed)
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	compressed, err = FlateCompress("testInput")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+	dataType = http.DetectContentType(compressed)
+	if dataType != "application/octet-stream" {
+		t.Fatal("unknown compression type")
+		return
+	}
+	_, err = FlateDecompress(compressed)
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////

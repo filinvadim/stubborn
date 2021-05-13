@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"runtime/debug"
 	"sync"
 	//sync "github.com/sasha-s/go-deadlock"
@@ -26,7 +27,6 @@ var (
 )
 
 type Config struct {
-	URL             string
 	IsReconnectable bool
 	// default message type
 	MessageType int
@@ -40,7 +40,6 @@ type Config struct {
 }
 
 type Client struct {
-	url  string
 	conn DuplexConnector
 
 	config Config
@@ -80,7 +79,6 @@ func NewStubborn(
 ) *Client {
 	s := new(Client)
 
-	s.url = conf.URL
 	s.stopRead = make(chan struct{})
 	s.stopReadWait = make(chan struct{})
 	s.stopKeepAlive = make(chan struct{})
@@ -139,7 +137,7 @@ func (s *Client) SetErrorHandler(errH ErrorHandler) {
 	s.errorHandler = errH
 }
 
-// Keep connection intact and trace it state
+// SetKeepAliveHandler keep connection intact and trace it state
 func (s *Client) SetKeepAliveHandler(keep KeepAlive) {
 	if s == nil {
 		return
@@ -157,9 +155,6 @@ func (s *Client) Connect(ctx context.Context) (err error) {
 	}
 	if s.messageHandler == nil {
 		return errNoMessageHandler
-	}
-	if s.url == "" {
-		return errNoURL
 	}
 	if s.config.Dialerf == nil {
 		return errNoDialer
@@ -460,17 +455,23 @@ func (s *Client) readLoop() {
 			var payload []byte
 			switch msgType {
 			case BinaryMessage:
-				payload, err = FlateDecompress(msg)
-				if err != nil {
-					s.errChan <- majorErr(err)
-
+				compressionType := http.DetectContentType(msg)
+				switch compressionType {
+				case gzipCompressionType:
 					payload, err = GZipDecompress(msg)
 					if err != nil {
 						s.errChan <- majorErr(err)
 						payload = msg
 					}
+				case flateCompressionType:
+					payload, err = FlateDecompress(msg)
+					if err != nil {
+						s.errChan <- majorErr(err)
+						payload = msg
+					}
+				default:
+					payload = msg
 				}
-
 			case TextMessage:
 				payload = msg
 			default:
@@ -548,7 +549,7 @@ func (s *Client) checkAuth(data []byte) (ok bool) {
 	opts := DefaultJSONOptions()
 	// SupersetMatch - means first item is a superset of a second item (first contains second).
 	diff, _ := CompareJSON(data, s.authResp, &opts)
-	if diff == SupersetMatch || diff == FullMatch{
+	if diff == SupersetMatch || diff == FullMatch {
 		s.authChan <- struct{}{}
 		return true
 	}

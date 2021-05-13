@@ -7,6 +7,11 @@ import (
 	"io"
 )
 
+const (
+	flateCompressionType = "application/octet-stream"
+	gzipCompressionType  = "application/x-gzip"
+)
+
 func GZipDecompress(input []byte) ([]byte, error) {
 	buf := bytes.NewBuffer(input)
 	reader, gzipErr := gzip.NewReader(buf)
@@ -52,6 +57,32 @@ func GZipCompress(input string) ([]byte, error) {
 	}
 
 	err = gz.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+func FlateCompress(input string) ([]byte, error) {
+	var buf bytes.Buffer
+	writer, err := flate.NewWriter(&buf, flate.BestSpeed)
+	if err != nil {
+		return nil, err
+	}
+	defer writer.Close()
+
+	_, err = writer.Write([]byte(input))
+	if err != nil {
+		return nil, err
+	}
+
+	err = writer.Flush()
+	if err != nil {
+		return nil, err
+	}
+
+	err = writer.Close()
 	if err != nil {
 		return nil, err
 	}
