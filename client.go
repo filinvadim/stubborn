@@ -303,9 +303,8 @@ func (s *Client) Send(msgType int, message []byte) (err error) {
 	}
 
 	s.writeMx.Lock()
-	err = s.conn.WriteMessage(msgType, message)
-	s.writeMx.Unlock()
-	return err
+	defer s.writeMx.Unlock()
+	return s.conn.WriteMessage(msgType, message)
 }
 
 func (s *Client) read() (messageType int, p []byte, err error) {

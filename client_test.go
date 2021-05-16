@@ -750,6 +750,31 @@ func TestDecompressionSuccess(t *testing.T) {
 	}
 }
 
+func TestWriteMessageSequenceSuccess(t *testing.T) {
+	mockConn := &MockConn{}
+	stub := NewStubborn(Config{
+		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
+			return mockConn, nil
+		},
+	})
+	defer stub.Close()
+
+	stub.SetMessageHandler(func(resp []byte) {})
+
+	err := stub.Connect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		if i == 3 {
+			stub.Send(TextMessage, []byte("panic"))
+			continue
+		}
+		stub.Send(TextMessage, []byte{})
+		t.Log("sent #", i)
+	}
+}
+
 //////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////MOCK///////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////
@@ -834,6 +859,9 @@ func (mc *MockConn) WriteMessage(messageType int, data []byte) error {
 	if messageType == PingMessage {
 		mc.pinged = true
 		return nil
+	}
+	if bytes.Contains(data, []byte("panic")) {
+		panic("write message panic")
 	}
 	return nil
 }
