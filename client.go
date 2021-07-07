@@ -579,7 +579,7 @@ func minorErr(err error) error {
 func (s *Client) Close() {
 	defer func() {
 		if r := recover(); r != nil {
-			s.errChan <- minorErr(fmt.Errorf("%v \n %s", r, string(debug.Stack())))
+			s.l.Errorln(minorErr(fmt.Errorf("%v \n", r)))
 		}
 	}()
 	s.isClosed = true
