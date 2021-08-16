@@ -200,6 +200,12 @@ func (s *Client) Connect(ctx context.Context) (err error) {
 	return nil
 }
 
+func (s *Client) ManualReconnect() {
+	if !s.isClosed {
+		_ = s.conn.Close()
+	}
+}
+
 func (s *Client) auth() error {
 	if s.authHandler == nil {
 		return nil
@@ -251,17 +257,13 @@ func (s *Client) keepAlive() {
 					continue
 				}
 
-				// prevent race condition for custom pings
-				s.writeMx.Lock()
-				if s.conn != nil {
-					err = s.conn.WriteMessage(s.keep.CustomPing())
-					if err != nil {
-						s.errChan <- majorErr(err)
-					} else {
-						s.l.Debugln("custom ping sent")
-					}
+				err = s.Send(s.keep.CustomPing())
+				if err != nil {
+					s.errChan <- majorErr(err)
+				} else {
+					s.l.Debugln("custom ping sent")
 				}
-				s.writeMx.Unlock()
+
 
 			case <-s.stopKeepAlive:
 				s.l.Debugln("pinging stopped")
