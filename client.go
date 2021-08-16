@@ -200,6 +200,12 @@ func (s *Client) Connect(ctx context.Context) (err error) {
 	return nil
 }
 
+func (s *Client) ManualReconnect() {
+	if !s.isClosed {
+		_ = s.conn.Close()
+	}
+}
+
 func (s *Client) auth() error {
 	if s.authHandler == nil {
 		return nil
