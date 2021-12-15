@@ -62,6 +62,7 @@ type Client struct {
 	authHandler AuthHandler
 	authResp    []byte
 	authChan    chan struct{}
+	isAuthed    bool
 
 	// messages processing fields
 	messageHandler MessageHandler
@@ -168,7 +169,6 @@ func (s *Client) Connect(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	s.l.Infoln("connection established")
 
 	s.timeAlive = time.Now()
 
@@ -192,6 +192,7 @@ func (s *Client) Connect(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
+	s.l.Infoln("connection established")
 
 	if s.keep != nil {
 		go s.keepAlive()
@@ -230,6 +231,7 @@ func (s *Client) auth() error {
 
 	select {
 	case <-s.authChan:
+		s.isAuthed = true
 	case <-time.After(timeOut):
 		return errAuthTimeout
 	}
@@ -263,7 +265,6 @@ func (s *Client) keepAlive() {
 				} else {
 					s.l.Debugln("custom ping sent")
 				}
-
 
 			case <-s.stopKeepAlive:
 				s.l.Debugln("pinging stopped")
@@ -485,7 +486,7 @@ func (s *Client) readLoop() {
 				s.l.Debugln("message received", string(payload))
 			}
 
-			tp, p := s.checkCustomPing(msgType, payload)
+			tp, p := s.recognizeCustomPing(msgType, payload)
 			if tp != 0 {
 				s.l.Debugln("custom ping received")
 				if err := s.Send(tp, p); err != nil {
@@ -494,7 +495,7 @@ func (s *Client) readLoop() {
 				break
 			}
 
-			if ok := s.checkAuth(payload); ok {
+			if ok := s.recognizeAuth(payload); ok {
 				break
 			}
 
@@ -503,7 +504,7 @@ func (s *Client) readLoop() {
 	}
 }
 
-func (s *Client) checkCustomPing(msgType int, payload []byte) (int, []byte) {
+func (s *Client) recognizeCustomPing(msgType int, payload []byte) (int, []byte) {
 	if s.keep == nil {
 		return 0, nil
 	}
@@ -529,13 +530,17 @@ func (s *Client) isUnimportant(err error) (ok bool) {
 	return
 }
 
-func (s *Client) checkAuth(data []byte) (ok bool) {
+func (s *Client) recognizeAuth(data []byte) (itsAuth bool) {
 	if s.authHandler == nil {
 		return
 	}
+
+	if s.isAuthed {
+		return false
+	}
+
 	if s.authResp == nil {
 		s.authChan <- struct{}{}
-		return
 	}
 
 	// auth response may look like just 'success' string
@@ -606,6 +611,5 @@ func (s *Client) Close() {
 	}
 	s.waitErrors()
 	close(s.errChan)
-	close(s.authChan)
 	s.l.Infoln("stubborn closed")
 }
