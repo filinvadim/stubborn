@@ -211,6 +211,7 @@ func (s *Client) auth() error {
 	if s.authHandler == nil {
 		return nil
 	}
+	s.isAuthed = false
 
 	authReq, authResp, err := s.authHandler()
 	if err != nil {
