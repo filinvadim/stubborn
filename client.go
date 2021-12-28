@@ -537,6 +537,7 @@ func (s *Client) recognizeAuth(data []byte) (itsAuth bool) {
 	}
 
 	if s.isAuthed {
+		s.l.Debugln("already authenticated")
 		return false
 	}
 
@@ -550,6 +551,7 @@ func (s *Client) recognizeAuth(data []byte) (itsAuth bool) {
 			s.authChan <- struct{}{}
 			return true
 		}
+		s.l.Debugln("failed auth via invalid auth json. Response:", string(data))
 		return
 	}
 
@@ -560,6 +562,7 @@ func (s *Client) recognizeAuth(data []byte) (itsAuth bool) {
 		s.authChan <- struct{}{}
 		return true
 	}
+	s.l.Debugln("failed auth. Diff:", diff.String())
 	return
 }
 
