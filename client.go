@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
-	"runtime/debug"
 	"sync"
 	//sync "github.com/sasha-s/go-deadlock"
 	"time"
@@ -293,7 +292,7 @@ func (s *Client) keepAlive() {
 func (s *Client) Send(msgType int, message []byte) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("%v \n %s", r, string(debug.Stack()))
+			err = fmt.Errorf("sending: %v \n", r)
 		}
 	}()
 	if s == nil {
@@ -334,7 +333,7 @@ func (s *Client) reconnect() {
 			}
 
 			s.critErrChan <- fmt.Errorf("%v", r)
-			s.errChan <- criticalErr(fmt.Errorf("%v \n %s", r, string(debug.Stack())))
+			s.errChan <- criticalErr(fmt.Errorf("reconnect: %v \n", r))
 			<-s.reconnectedCh
 		}
 	}()
@@ -414,7 +413,7 @@ func (s *Client) readLoop() {
 			}
 
 			s.critErrChan <- fmt.Errorf("%v", r)
-			s.errChan <- criticalErr(fmt.Errorf("%v \n %s", r, string(debug.Stack())))
+			s.errChan <- criticalErr(fmt.Errorf("read loop: %v \n", r))
 			<-s.reconnectedCh
 			go s.readLoop()
 		}
