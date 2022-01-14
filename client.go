@@ -8,6 +8,8 @@ import (
 	"math/rand"
 	"net/http"
 	"sync"
+	"sync/atomic"
+
 	//sync "github.com/sasha-s/go-deadlock"
 	"time"
 )
@@ -17,18 +19,16 @@ var (
 	errNotConnected     = errors.New("stubborn is not connected")
 	errAuthTimeout      = errors.New("auth timeout")
 	errNoMessageHandler = errors.New("message handler wasn't set")
-	errNoURL            = errors.New("connection URL wasn't set")
 	errNoDialer         = errors.New("dialer wasn't set")
 
-	ErrCritical = errors.New("critical")
-	ErrMajor    = errors.New("major")
-	ErrMinor    = errors.New("minor")
+	ErrCritical = errors.New("stubborn critical")
+	ErrMajor    = errors.New("stubborn major")
+	ErrMinor    = errors.New("stubborn minor")
 )
 
+// TODO use opts pattern
 type Config struct {
 	IsReconnectable bool
-	// default message type
-	MessageType int
 	// use your favourite logger
 	Logger CustomLogger
 	// use your favourite client
@@ -36,21 +36,24 @@ type Config struct {
 	AuthTimeOut time.Duration
 	// it is easier to define expected error because exceptions always unexpected :)
 	UnimportantErrs []error
+	// deprecated
+	MessageType int
+}
+
+type crashController struct {
+	reconnectDeadChan chan struct{}
+	keepaliveDeadChan chan struct{}
+	readloopDeadChan  chan struct{}
 }
 
 type Client struct {
-	conn DuplexConnector
+	ctx context.Context
+	l   CustomLogger
 
 	config Config
-	l      CustomLogger
-
-	// service fields
-	ctx           context.Context
-	writeMx       *sync.Mutex
-	stopRead      chan struct{}
-	stopReadWait  chan struct{}
-	stopKeepAlive chan struct{}
-	isClosed      bool
+	connMx *sync.RWMutex
+	conn   DuplexConnector
+	cc     crashController
 
 	// healthcheck processing fields
 	keep      *KeepAlive
@@ -59,9 +62,9 @@ type Client struct {
 
 	// auth processing fields
 	authHandler AuthHandler
+	authReq     []byte
 	authResp    []byte
 	authChan    chan struct{}
-	isAuthed    bool
 
 	// messages processing fields
 	messageHandler MessageHandler
@@ -69,9 +72,12 @@ type Client struct {
 	errChan        chan error
 
 	// reconnecting processing fields
-	critErrChan   chan error
-	backoff       *backoff
-	reconnectedCh chan struct{}
+	startReconnChan  chan struct{}
+	backoff          *backoff
+	finishReconnChan chan struct{}
+
+	authStatus   uint32
+	closedStatus uint32
 }
 
 func NewStubborn(
@@ -79,29 +85,49 @@ func NewStubborn(
 ) *Client {
 	s := new(Client)
 
-	s.stopRead = make(chan struct{})
-	s.stopReadWait = make(chan struct{})
-	s.stopKeepAlive = make(chan struct{})
-	s.critErrChan = make(chan error, 1)
 	s.authChan = make(chan struct{}, 1)
 	s.errChan = make(chan error, 100)
-	s.reconnectedCh = make(chan struct{}, 1)
-	s.writeMx = new(sync.Mutex)
+	s.startReconnChan = make(chan struct{}, 1)
+	s.finishReconnChan = make(chan struct{}, 1)
+	s.connMx = new(sync.RWMutex)
 	s.timeMx = new(sync.Mutex)
 	s.config = conf
 
-	s.l = s.config.Logger
+	s.l = conf.Logger
 	if s.l == nil {
 		s.l = defaultLogger{}
 	}
-	if s.config.MessageType == 0 {
-		s.config.MessageType = TextMessage
+
+	s.cc = crashController{
+		reconnectDeadChan: make(chan struct{}, 1),
+		keepaliveDeadChan: make(chan struct{}, 1),
+		readloopDeadChan:  make(chan struct{}, 1),
 	}
 
 	return s
 }
 
-// Set auth callback handler
+func (s *Client) isClosed() bool {
+	return atomic.LoadUint32(&s.closedStatus) == 1
+}
+
+func (s *Client) isAuthed() bool {
+	return atomic.LoadUint32(&s.authStatus) == 1
+}
+
+func (s *Client) setClosed() {
+	atomic.StoreUint32(&s.closedStatus, 1)
+}
+
+func (s *Client) setIsAuthed(success bool) {
+	if success {
+		atomic.StoreUint32(&s.authStatus, 1)
+		return
+	}
+	atomic.StoreUint32(&s.authStatus, 0)
+}
+
+// SetAuthHandler auth callback handler
 func (s *Client) SetAuthHandler(authH AuthHandler) {
 	if s == nil {
 		return
@@ -113,7 +139,7 @@ func (s *Client) SetAuthHandler(authH AuthHandler) {
 	s.authHandler = authH
 }
 
-// Set message handler excluding errors
+// SetMessageHandler message handler excluding errors
 func (s *Client) SetMessageHandler(msgH MessageHandler) {
 	if s == nil {
 		return
@@ -125,7 +151,7 @@ func (s *Client) SetMessageHandler(msgH MessageHandler) {
 	s.messageHandler = msgH
 }
 
-// Set error handler excluding messages
+// SetErrorHandler error handler excluding messages
 func (s *Client) SetErrorHandler(errH ErrorHandler) {
 	if s == nil {
 		return
@@ -160,17 +186,29 @@ func (s *Client) Connect(ctx context.Context) (err error) {
 		return errNoDialer
 	}
 
+	if s.authHandler != nil {
+		s.authReq, s.authResp, err = s.authHandler()
+		if err != nil {
+			return fmt.Errorf("auth building: %w", err)
+		}
+	}
+
 	s.ctx = ctx
-
 	dialerf := s.config.Dialerf
-
 	s.conn, err = dialerf(s.ctx)
 	if err != nil {
 		return err
 	}
 
-	s.timeAlive = time.Now()
+	go s.trackCrashes()
+	go s.readLoop()
 
+	err = s.auth()
+	if err != nil {
+		s.Close()
+		return err
+	}
+	s.l.Infoln("connection established")
 	go s.handleErrors()
 
 	if s.config.IsReconnectable {
@@ -182,17 +220,10 @@ func (s *Client) Connect(ctx context.Context) (err error) {
 			Min:            2 * time.Second,
 			Max:            10 * time.Minute,
 		}
-
 		go s.reconnect()
 	}
-	go s.readLoop()
 
-	err = s.auth()
-	if err != nil {
-		return err
-	}
-	s.l.Infoln("connection established")
-
+	s.timeAlive = time.Now()
 	if s.keep != nil {
 		go s.keepAlive()
 	}
@@ -201,37 +232,57 @@ func (s *Client) Connect(ctx context.Context) (err error) {
 }
 
 func (s *Client) ManualReconnect() {
-	if !s.isClosed {
+	if !s.isClosed() {
 		_ = s.conn.Close()
 	}
 }
 
+func (s *Client) trackCrashes() {
+	for {
+		select {
+		case _, ok := <-s.cc.readloopDeadChan:
+			if !ok {
+				return
+			}
+			go s.readLoop()
+		case _, ok := <-s.cc.reconnectDeadChan:
+			if !ok {
+				return
+			}
+			if s.config.IsReconnectable {
+				go s.reconnect()
+			}
+		case _, ok := <-s.cc.keepaliveDeadChan:
+			if !ok {
+				return
+			}
+			if s.keep != nil {
+				go s.keepAlive()
+			}
+		}
+	}
+}
+
 func (s *Client) auth() error {
-	if s.authHandler == nil {
+	if s.authReq == nil {
 		return nil
 	}
-	s.isAuthed = false
 
-	authReq, authResp, err := s.authHandler()
-	if err != nil {
-		return fmt.Errorf("auth error: %w", err)
-	}
-
-	s.authResp = authResp
-
-	err = s.Send(s.config.MessageType, authReq)
-	if err != nil {
-		return fmt.Errorf("auth error: %w", err)
-	}
+	s.setIsAuthed(false)
 
 	timeOut := s.config.AuthTimeOut
 	if timeOut == 0 {
 		timeOut = time.Second * 5
 	}
 
+	err := s.Send(TextMessage, s.authReq)
+	if err != nil {
+		return fmt.Errorf("auth: %w", err)
+	}
+
 	select {
 	case <-s.authChan:
-		s.isAuthed = true
+		s.setIsAuthed(true)
 	case <-time.After(timeOut):
 		return errAuthTimeout
 	}
@@ -239,53 +290,46 @@ func (s *Client) auth() error {
 }
 
 func (s *Client) keepAlive() {
-	if s.keep.Tick == 0 {
-		return
-	}
 	aliveTicker := time.NewTicker(30 * time.Minute)
 	defer aliveTicker.Stop()
 	var err error
 
 	// we can't rely on select random therefore pinging must be called first despite everything
 	go func() {
-		for {
-			select {
-			case <-time.Tick(s.keep.Tick):
-				if s.keep.CustomPing == nil {
-					err := s.Send(PingMessage, []byte{})
-					if err != nil {
-						s.errChan <- minorErr(err)
-					}
-					continue
-				}
-
-				err = s.Send(s.keep.CustomPing())
-				if err != nil {
-					s.errChan <- majorErr(err)
-				} else {
-					s.l.Debugln("custom ping sent")
-				}
-
-			case <-s.stopKeepAlive:
-				s.l.Debugln("pinging stopped")
+		if s.keep.Tick == 0 {
+			return
+		}
+		for range time.Tick(s.keep.Tick) {
+			if s.isClosed() {
 				return
 			}
+			if s.keep.CustomPing == nil {
+				err := s.Send(PingMessage, []byte{})
+				if err != nil {
+					s.errChan <- minorErr(err)
+				}
+				continue
+			}
+
+			err = s.Send(s.keep.CustomPing())
+			if err != nil {
+				s.errChan <- majorErr(err)
+				continue
+			}
+			s.l.Debugln("custom ping sent")
 		}
 	}()
 
-	for {
-		select {
-		case <-aliveTicker.C:
-			s.timeMx.Lock()
-			s.l.Infoln(
-				"ws connection alive ",
-				time.Now().Sub(s.timeAlive).Round(time.Minute),
-			)
-			s.timeMx.Unlock()
-		case <-s.stopKeepAlive:
-			s.l.Debugln("keep alive stopped")
+	for range aliveTicker.C {
+		if s.isClosed() {
 			return
 		}
+		s.timeMx.Lock()
+		s.l.Infoln(
+			"ws connection alive ",
+			time.Now().Sub(s.timeAlive).Round(time.Minute),
+		)
+		s.timeMx.Unlock()
 	}
 }
 
@@ -298,15 +342,13 @@ func (s *Client) Send(msgType int, message []byte) (err error) {
 	if s == nil {
 		return errNotInit
 	}
-	if s.conn == nil {
-		return errNotConnected
-	}
-	if s.isClosed {
+
+	if s.isClosed() {
 		return nil
 	}
 
-	s.writeMx.Lock()
-	defer s.writeMx.Unlock()
+	s.connMx.Lock()
+	defer s.connMx.Unlock()
 	return s.conn.WriteMessage(msgType, message)
 }
 
@@ -325,21 +367,13 @@ func (s *Client) read() (messageType int, p []byte, err error) {
 func (s *Client) reconnect() {
 	defer func() {
 		if r := recover(); r != nil {
-			if s.isClosed {
-				return
-			}
-			if !s.config.IsReconnectable {
-				go s.reconnect()
-			}
-
-			s.critErrChan <- fmt.Errorf("%v", r)
-			s.errChan <- criticalErr(fmt.Errorf("reconnect: %v \n", r))
-			<-s.reconnectedCh
+			s.cc.reconnectDeadChan <- struct{}{}
+			s.errChan <- majorErr(fmt.Errorf("reconnect: %v \n", r))
 		}
 	}()
 
-	for cErr := range s.critErrChan {
-		if s.isClosed {
+	for range s.startReconnChan {
+		if s.isClosed() {
 			return
 		}
 		s.l.Infoln("reconnecting...")
@@ -357,38 +391,37 @@ func (s *Client) reconnect() {
 		}
 
 		var err error
+		s.connMx.Lock()
 		s.conn, err = dialerf(s.ctx)
+		s.connMx.Unlock()
 		if err != nil {
 			// just warn if not reconnectable
 			if !s.config.IsReconnectable {
-				s.l.Errorln(criticalErr(err))
+				s.l.Errorln(err)
 				return
 			}
-			s.critErrChan <- criticalErr(err)
+			s.startReconnChan <- struct{}{}
 			continue
 		}
 
-		s.reconnectedCh <- struct{}{}
+		s.finishReconnChan <- struct{}{} // finish it here so auth can be processed
 
 		err = s.auth()
 		if err != nil {
-			s.critErrChan <- criticalErr(err)
+			s.startReconnChan <- struct{}{}
 			continue
 		}
+
+		s.l.Infoln("reconnected")
 
 		s.timeMx.Lock()
 		s.timeAlive = time.Now()
 		s.timeMx.Unlock()
 
-		// sending notification about reconnect event by error
-		s.errChan <- criticalErr(cErr)
-		s.l.Infoln("reconnected")
-
 		// reconnect once only if panic occurs
 		if !s.config.IsReconnectable {
 			return
 		}
-
 	}
 	s.l.Debugln("reconnect stopped")
 }
@@ -405,103 +438,109 @@ func (s *Client) handleErrors() {
 func (s *Client) readLoop() {
 	defer func() {
 		if r := recover(); r != nil {
-			if s.isClosed {
-				return
-			}
-			if !s.config.IsReconnectable {
-				go s.reconnect()
-			}
-
-			s.critErrChan <- fmt.Errorf("%v", r)
-			s.errChan <- criticalErr(fmt.Errorf("read loop: %v \n", r))
-			<-s.reconnectedCh
-			go s.readLoop()
+			s.errChan <- majorErr(fmt.Errorf("read loop: %v \n", r))
+			s.cc.readloopDeadChan <- struct{}{}
 		}
 	}()
 
 	for {
-		select {
-		case <-s.stopRead:
-			close(s.stopReadWait)
+		if s.isClosed() {
+			s.closeChannels()
 			return
-
-		default:
-			if s.conn == nil {
-				time.Sleep(5 * time.Second)
-				s.errChan <- errNotConnected
+		}
+		if s.conn == nil {
+			time.Sleep(5 * time.Second)
+			s.errChan <- minorErr(errNotConnected)
+			continue
+		}
+		msgType, msg, err := s.read()
+		if err != nil {
+			if s.isUnimportant(err) {
+				s.errChan <- minorErr(err)
 				continue
 			}
-			msgType, msg, err := s.read()
-			if err != nil {
-				s.l.Errorln(err.Error())
-				if s.isUnimportant(err) {
-					break
-				}
-				if s.config.IsReconnectable && !s.isClosed {
-					s.critErrChan <- criticalErr(err)
-					<-s.reconnectedCh
-				}
-				break
-			}
 
-			if msgType == PingMessage {
-				s.l.Debugln("ping received")
-				s.Send(PongMessage, msg)
-				break
+			if s.config.IsReconnectable && !s.isClosed() {
+				s.errChan <- criticalErr(err)
+				s.startReconnChan <- struct{}{}
+				<-s.finishReconnChan
 			}
-
-			if msg == nil {
-				break
-			}
-
-			var payload []byte
-			switch msgType {
-			case BinaryMessage:
-				compressionType := http.DetectContentType(msg)
-				switch compressionType {
-				case gzipCompressionType:
-					payload, err = GZipDecompress(msg)
-					if err != nil {
-						s.errChan <- majorErr(err)
-						payload = msg
-					}
-				case flateCompressionType:
-					payload, err = FlateDecompress(msg)
-					if err != nil {
-						s.errChan <- majorErr(err)
-						payload = msg
-					}
-				default:
-					payload = msg
-				}
-			case TextMessage:
-				payload = msg
-			default:
-				payload = msg
-			}
-
-			if len(payload) > 80 {
-				s.l.Debugln("message received", string(payload[:80]))
-			} else {
-				s.l.Debugln("message received", string(payload))
-			}
-
-			tp, p := s.recognizeCustomPing(msgType, payload)
-			if tp != 0 {
-				s.l.Debugln("custom ping received")
-				if err := s.Send(tp, p); err != nil {
-					s.errChan <- majorErr(err)
-				}
-				break
-			}
-
-			if ok := s.recognizeAuth(payload); ok {
-				break
-			}
-
-			s.messageHandler(payload)
+			continue
 		}
+
+		payload := s.parseMessage(msgType, msg)
+		if payload == nil {
+			continue
+		}
+
+		tp, p := s.recognizeCustomPing(msgType, payload)
+		if tp != 0 {
+			s.l.Debugln("custom ping received")
+			if err := s.Send(tp, p); err != nil {
+				s.errChan <- majorErr(err)
+			}
+			continue
+		}
+
+		if ok := s.recognizeAuth(payload); ok {
+			continue
+		}
+
+		s.messageHandler(payload)
 	}
+}
+
+func (s *Client) closeChannels() {
+	close(s.startReconnChan)
+	close(s.finishReconnChan)
+	close(s.authChan)
+	close(s.cc.readloopDeadChan)
+	close(s.cc.reconnectDeadChan)
+	close(s.cc.keepaliveDeadChan)
+	close(s.errChan)
+}
+
+func (s *Client) parseMessage(msgType int, msg []byte) (payload []byte) {
+	if msg == nil {
+		return nil
+	}
+
+	var err error
+
+	switch msgType {
+	case PingMessage:
+		s.l.Debugln("ping received")
+		s.Send(PongMessage, msg)
+		return nil
+	case BinaryMessage:
+		compressionType := http.DetectContentType(msg)
+		switch compressionType {
+		case gzipCompressionType:
+			payload, err = GZipDecompress(msg)
+			if err != nil {
+				s.errChan <- majorErr(err)
+				payload = msg
+			}
+		case flateCompressionType:
+			payload, err = FlateDecompress(msg)
+			if err != nil {
+				s.errChan <- majorErr(err)
+				payload = msg
+			}
+		default:
+			payload = msg
+		}
+	case TextMessage:
+		payload = msg
+	default:
+		payload = msg
+	}
+	if len(payload) > 80 {
+		s.l.Debugln("message received", string(payload[:80]))
+	} else {
+		s.l.Debugln("message received", string(payload))
+	}
+	return payload
 }
 
 func (s *Client) recognizeCustomPing(msgType int, payload []byte) (int, []byte) {
@@ -535,7 +574,7 @@ func (s *Client) recognizeAuth(data []byte) (itsAuth bool) {
 		return
 	}
 
-	if s.isAuthed {
+	if s.isAuthed() {
 		s.l.Debugln("already authenticated")
 		return false
 	}
@@ -565,15 +604,6 @@ func (s *Client) recognizeAuth(data []byte) (itsAuth bool) {
 	return
 }
 
-// in case this important
-func (s *Client) waitErrors() {
-	for {
-		if len(s.errChan) == 0 {
-			return
-		}
-	}
-}
-
 func criticalErr(err error) error {
 	return fmt.Errorf("%s %w", err, ErrCritical)
 }
@@ -592,27 +622,14 @@ func (s *Client) Close() {
 			s.l.Errorln(minorErr(fmt.Errorf("%v \n", r)))
 		}
 	}()
-	s.isClosed = true
-
-	close(s.stopRead)
-	s.l.Debugln("stubborn closing...")
-	select {
-	case <-s.stopReadWait:
-	case <-time.After(time.Second * 5):
+	if s.isClosed() {
+		return
 	}
-	close(s.stopKeepAlive)
+	s.setClosed()
 
-	if s.conn != nil {
-		if err := s.conn.Close(); err != nil {
-			s.errChan <- minorErr(err)
-		}
-	}
+	s.connMx.Lock()
+	s.conn.Close()
+	s.connMx.Unlock()
 
-	if s.config.IsReconnectable {
-		close(s.critErrChan)
-		close(s.reconnectedCh)
-	}
-	s.waitErrors()
-	close(s.errChan)
 	s.l.Infoln("stubborn closed")
 }

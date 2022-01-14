@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -32,10 +34,21 @@ var (
 	errMust = errors.New("must be error")
 )
 
+type Bool struct {
+	mx  sync.Mutex
+	val bool
+}
+
 func TestConnectSuccess(t *testing.T) {
 	stub := NewStubborn(Config{
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-			return &MockConn{}, nil
+			return &MockConn{
+				isAuthDone:   NewBool(false),
+				pinged:       NewBool(false),
+				subscribed:   NewBool(false),
+				customPinged: NewBool(false),
+				isFailable:   NewBool(false),
+			}, nil
 		},
 	})
 	defer stub.Close()
@@ -81,7 +94,13 @@ func TestConnectFailNoDialer(t *testing.T) {
 func TestConnectFailNoMessageHandler(t *testing.T) {
 	stub := NewStubborn(Config{
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-			return &MockConn{}, nil
+			return &MockConn{
+				isAuthDone:   NewBool(false),
+				pinged:       NewBool(false),
+				subscribed:   NewBool(false),
+				customPinged: NewBool(false),
+				isFailable:   NewBool(false),
+			}, nil
 		},
 	})
 
@@ -122,13 +141,20 @@ func TestAuthSuccess(t *testing.T) {
 		{"byte auth", []byte(authReqType), []byte(authSuccessString)},
 		{"struct auth", []byte(authReqType), btStruct},
 		{"array auth", []byte(authReqType), btArray},
+		{"nil auth", []byte(authReqType), nil},
 	}
 
 	for _, cs := range testCases {
 		t.Run(cs.name, func(t *testing.T) {
 			stub := NewStubborn(Config{
 				Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-					return &MockConn{}, nil
+					return &MockConn{
+						isAuthDone:   NewBool(false),
+						pinged:       NewBool(false),
+						subscribed:   NewBool(false),
+						customPinged: NewBool(false),
+						isFailable:   NewBool(false),
+					}, nil
 				},
 				AuthTimeOut: time.Second,
 			})
@@ -183,7 +209,13 @@ func TestAuthFail(t *testing.T) {
 
 			stub := NewStubborn(Config{
 				Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-					return &MockConn{}, nil
+					return &MockConn{
+						isAuthDone:   NewBool(false),
+						pinged:       NewBool(false),
+						subscribed:   NewBool(false),
+						customPinged: NewBool(false),
+						isFailable:   NewBool(false),
+					}, nil
 				},
 				AuthTimeOut: time.Second * time.Duration(3),
 			})
@@ -212,7 +244,13 @@ func TestAuthFail(t *testing.T) {
 func TestKeepAliveSuccess(t *testing.T) {
 	stub := NewStubborn(Config{
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-			return &MockConn{}, nil
+			return &MockConn{
+				isAuthDone:   NewBool(false),
+				pinged:       NewBool(false),
+				subscribed:   NewBool(false),
+				customPinged: NewBool(false),
+				isFailable:   NewBool(false),
+			}, nil
 		},
 	})
 	defer stub.Close()
@@ -251,7 +289,13 @@ func TestKeepAliveSuccess(t *testing.T) {
 func TestKeepAliveFail(t *testing.T) {
 	stub := NewStubborn(Config{
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-			return &MockConn{}, nil
+			return &MockConn{
+				isAuthDone:   NewBool(false),
+				pinged:       NewBool(false),
+				subscribed:   NewBool(false),
+				customPinged: NewBool(false),
+				isFailable:   NewBool(false),
+			}, nil
 		},
 	})
 	defer stub.Close()
@@ -285,7 +329,13 @@ func TestKeepAliveFail(t *testing.T) {
 func TestKeepAliveCustomPingSuccess(t *testing.T) {
 	stub := NewStubborn(Config{
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-			return &MockConn{}, nil
+			return &MockConn{
+				isAuthDone:   NewBool(false),
+				pinged:       NewBool(false),
+				subscribed:   NewBool(false),
+				customPinged: NewBool(false),
+				isFailable:   NewBool(false),
+			}, nil
 		},
 	})
 	defer stub.Close()
@@ -337,10 +387,17 @@ func TestKeepAliveCustomPingFail(t *testing.T) {
 
 	for _, cs := range testCases {
 		t.Run(cs.name, func(t *testing.T) {
-
+			payload := cs.payload
+			typ := cs.msgType
 			stub := NewStubborn(Config{
 				Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-					return &MockConn{}, nil
+					return &MockConn{
+						isAuthDone:   NewBool(false),
+						pinged:       NewBool(false),
+						subscribed:   NewBool(false),
+						customPinged: NewBool(false),
+						isFailable:   NewBool(false),
+					}, nil
 				},
 			})
 
@@ -351,8 +408,8 @@ func TestKeepAliveCustomPingFail(t *testing.T) {
 			})
 			stub.SetKeepAliveHandler(KeepAlive{
 				Tick: time.Second / 4,
-				CustomPing: func() (msgType int, payload []byte) {
-					return cs.msgType, cs.payload
+				CustomPing: func() (msgType int, _ []byte) {
+					return typ, payload
 				},
 			})
 			err := stub.Connect(context.Background())
@@ -375,7 +432,13 @@ func TestKeepAliveCustomPingFail(t *testing.T) {
 func TestKeepAliveCustomPongSuccess(t *testing.T) {
 	stub := NewStubborn(Config{
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-			return &MockConn{}, nil
+			return &MockConn{
+				isAuthDone:   NewBool(false),
+				pinged:       NewBool(false),
+				subscribed:   NewBool(false),
+				customPinged: NewBool(false),
+				isFailable:   NewBool(false),
+			}, nil
 		},
 	})
 	defer stub.Close()
@@ -428,7 +491,6 @@ func TestKeepAliveCustomPongSuccess(t *testing.T) {
 }
 
 func TestKeepAliveCustomPongFail(t *testing.T) {
-
 	testCases := []struct {
 		name    string
 		msgType int
@@ -440,9 +502,17 @@ func TestKeepAliveCustomPongFail(t *testing.T) {
 
 	for _, cs := range testCases {
 		t.Run(cs.name, func(t *testing.T) {
+			typ := cs.msgType
+			payload := cs.payload
 			stub := NewStubborn(Config{
 				Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-					return &MockConn{}, nil
+					return &MockConn{
+						isAuthDone:   NewBool(false),
+						pinged:       NewBool(false),
+						subscribed:   NewBool(false),
+						customPinged: NewBool(false),
+						isFailable:   NewBool(false),
+					}, nil
 				},
 			})
 
@@ -457,10 +527,10 @@ func TestKeepAliveCustomPongFail(t *testing.T) {
 			})
 
 			stub.SetKeepAliveHandler(KeepAlive{
-				CustomPong: func(msgTp int, data []byte) (msgType int, payload []byte) {
+				CustomPong: func(msgTp int, data []byte) (msgType int, _ []byte) {
 
 					// should not return 'pong' result and proceed to response handler
-					msgTp = cs.msgType
+					msgTp = typ
 					data = payload
 
 					if msgTp != TextMessage {
@@ -508,7 +578,13 @@ func TestKeepAliveCustomPongFail(t *testing.T) {
 func TestSubscriptionSuccess(t *testing.T) {
 	stub := NewStubborn(Config{
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-			return &MockConn{}, nil
+			return &MockConn{
+				isAuthDone:   NewBool(false),
+				pinged:       NewBool(false),
+				subscribed:   NewBool(false),
+				customPinged: NewBool(false),
+				isFailable:   NewBool(false),
+			}, nil
 		},
 	})
 	defer stub.Close()
@@ -548,7 +624,13 @@ func TestSubscriptionSuccess(t *testing.T) {
 func TestNoSubscriptionFail(t *testing.T) {
 	stub := NewStubborn(Config{
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-			return &MockConn{}, nil
+			return &MockConn{
+				isAuthDone:   NewBool(false),
+				pinged:       NewBool(false),
+				subscribed:   NewBool(false),
+				customPinged: NewBool(false),
+				isFailable:   NewBool(false),
+			}, nil
 		},
 	})
 	defer stub.Close()
@@ -582,7 +664,13 @@ func TestNoSubscriptionFail(t *testing.T) {
 func TestWrongSubscriptionFail(t *testing.T) {
 	stub := NewStubborn(Config{
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-			return &MockConn{}, nil
+			return &MockConn{
+				isAuthDone:   NewBool(false),
+				pinged:       NewBool(false),
+				subscribed:   NewBool(false),
+				customPinged: NewBool(false),
+				isFailable:   NewBool(false),
+			}, nil
 		},
 	})
 	defer stub.Close()
@@ -617,7 +705,13 @@ func TestWrongSubscriptionFail(t *testing.T) {
 func TestSubscriptionReconnectSuccess(t *testing.T) {
 	stub := NewStubborn(Config{
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
-			return &MockConn{isFailable: true}, nil
+			return &MockConn{
+				isAuthDone:   NewBool(false),
+				pinged:       NewBool(false),
+				subscribed:   NewBool(false),
+				customPinged: NewBool(false),
+				isFailable:   NewBool(true),
+			}, nil
 		},
 		IsReconnectable: true,
 	})
@@ -660,7 +754,13 @@ func TestSubscriptionReconnectSuccess(t *testing.T) {
 }
 
 func TestSubscriptionReconnectPanicSuccess(t *testing.T) {
-	mockConn := &MockConn{}
+	mockConn := &MockConn{
+		isAuthDone:   NewBool(false),
+		pinged:       NewBool(false),
+		subscribed:   NewBool(false),
+		customPinged: NewBool(false),
+		isFailable:   NewBool(false),
+	}
 	stub := NewStubborn(Config{
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return mockConn, nil
@@ -751,7 +851,13 @@ func TestDecompressionSuccess(t *testing.T) {
 }
 
 func TestWriteMessageSequenceSuccess(t *testing.T) {
-	mockConn := &MockConn{}
+	mockConn := &MockConn{
+		isAuthDone:   NewBool(false),
+		pinged:       NewBool(false),
+		subscribed:   NewBool(false),
+		customPinged: NewBool(false),
+		isFailable:   NewBool(false),
+	}
 	stub := NewStubborn(Config{
 		Dialerf: func(ctx context.Context) (DuplexConnector, error) {
 			return mockConn, nil
@@ -781,21 +887,20 @@ func TestWriteMessageSequenceSuccess(t *testing.T) {
 
 var (
 	mockCustomPing = []byte(`{"action": "ping","data": {"ts": 1575537778295}}`)
-
-	msgCount int
+	msgCount       int32
 )
 
 type MockConn struct {
-	isFailable     bool
-	isAuthDone     bool
+	isFailable     *Bool
+	isAuthDone     *Bool
 	authTypesCount int
-	subscribed     bool
-	pinged         bool
-	customPinged   bool
+	subscribed     *Bool
+	pinged         *Bool
+	customPinged   *Bool
 }
 
 func (mc *MockConn) ReadMessage() (messageType int, p []byte, err error) {
-	if mc.isAuthDone {
+	if mc.isAuthDone.Load() {
 		var bt []byte
 		if mc.authTypesCount == 0 {
 			authMsg := struct {
@@ -814,50 +919,49 @@ func (mc *MockConn) ReadMessage() (messageType int, p []byte, err error) {
 		}
 		mc.authTypesCount++
 		if mc.authTypesCount > 2 {
-			mc.isAuthDone = false
+			mc.isAuthDone.Store(false)
 		}
 		return TextMessage, bt, nil
 	}
-	if msgCount > countMessages {
+	if atomic.LoadInt32(&msgCount) > countMessages {
 		return 0, nil, nil
 	}
-	if mc.pinged {
+	if mc.pinged.Load() {
 		return PongMessage, []byte(pinged), err
 	}
-	if mc.customPinged {
+	if mc.customPinged.Load() {
 		return PongMessage, []byte(customPingMessage), err
 	}
-	if !mc.subscribed && !mc.isFailable {
+	if !mc.subscribed.Load() && !mc.isFailable.Load() {
 		time.Sleep(100 * time.Millisecond)
 		return TextMessage, mockCustomPing, nil
 	}
-	if msgCount == 1 && mc.isFailable {
-		msgCount++
+	if atomic.LoadInt32(&msgCount) == 1 && mc.isFailable.Load() {
+		atomic.AddInt32(&msgCount, 1)
 		return 0, nil, errors.New("CRITICAL")
 	}
-
-	msgCount++
+	atomic.AddInt32(&msgCount, 1)
 	return TextMessage, []byte(sampleMessage), nil
 
 }
 
 func (mc *MockConn) WriteMessage(messageType int, data []byte) error {
 	if bytes.Contains(data, []byte(authReqType)) {
-		mc.isAuthDone = true
+		mc.isAuthDone.Store(true)
 		return nil
 	}
 	if bytes.Contains(data, []byte(sub)) {
-		mc.subscribed = true
+		mc.subscribed.Store(true)
 		return nil
 	}
 
 	if bytes.Contains(data, []byte(customPingMessage)) {
-		mc.customPinged = true
+		mc.customPinged.Store(true)
 		return nil
 	}
 
 	if messageType == PingMessage {
-		mc.pinged = true
+		mc.pinged.Store(true)
 		return nil
 	}
 	if bytes.Contains(data, []byte("panic")) {
@@ -867,8 +971,25 @@ func (mc *MockConn) WriteMessage(messageType int, data []byte) error {
 }
 
 func (mc *MockConn) Close() error {
-	if msgCount > countMessages {
-		msgCount = 0
+	if atomic.LoadInt32(&msgCount) > countMessages {
+		atomic.StoreInt32(&msgCount, 0)
 	}
 	return nil
+}
+
+func NewBool(val bool) *Bool {
+	return &Bool{sync.Mutex{}, val}
+}
+
+func (b *Bool) Load() bool {
+	b.mx.Lock()
+	val := b.val
+	b.mx.Unlock()
+	return val
+}
+
+func (b *Bool) Store(val bool) {
+	b.mx.Lock()
+	b.val = val
+	b.mx.Unlock()
 }
