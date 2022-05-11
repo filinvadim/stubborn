@@ -390,10 +390,7 @@ func (s *Client) reconnect() {
 			time.Sleep(s.backoff.Duration())
 		}
 
-		var err error
-		s.connMx.Lock()
-		s.conn, err = dialerf(s.ctx)
-		s.connMx.Unlock()
+		newConn, err := dialerf(s.ctx)
 		if err != nil {
 			// just warn if not reconnectable
 			if !s.config.IsReconnectable {
@@ -403,6 +400,9 @@ func (s *Client) reconnect() {
 			s.startReconnChan <- struct{}{}
 			continue
 		}
+		s.connMx.Lock()
+		s.conn = newConn
+		s.connMx.Unlock()
 
 		s.finishReconnChan <- struct{}{} // finish it here so auth can be processed
 
