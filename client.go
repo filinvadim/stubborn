@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"syscall"
 
 	//sync "github.com/sasha-s/go-deadlock"
 	"time"
@@ -349,7 +350,13 @@ func (s *Client) Send(msgType int, message []byte) (err error) {
 
 	s.connMx.Lock()
 	defer s.connMx.Unlock()
-	return s.conn.WriteMessage(msgType, message)
+
+	err = s.conn.WriteMessage(msgType, message)
+	if errors.Is(err, syscall.EPIPE) {
+		s.startReconnChan <- struct{}{}
+	}
+
+	return err
 }
 
 func (s *Client) read() (messageType int, p []byte, err error) {
