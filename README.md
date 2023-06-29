@@ -1,3 +1,7 @@
+<p>
+  <a href="https://github.com/filinvadim/stubborn/actions"><img alt="golang-action status" src="https://github.com/filinvadim/stubborn/workflows/Go/badge.svg"></a>
+</p>
+
 # Stubborn 
 
 Stubborn  is a framework that's written in [Go](http://golang.org/) for 
