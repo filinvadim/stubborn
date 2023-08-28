@@ -45,7 +45,7 @@ the duplex protocols using various types of clients.
 ### Crypto exchange pseudocode examples
 
 * Binance
-```
+```go
 func BinanceStream(key, secret string) (err error) {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, syscall.SIGTERM, syscall.SIGINT)
@@ -101,7 +101,7 @@ func BinanceStream(key, secret string) (err error) {
 }
 ```
 * Huobi
-```
+```go
 func HuobiTradesSubscribe(key, secret string) (err error) {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, syscall.SIGTERM, syscall.SIGINT)
@@ -200,7 +200,7 @@ func HuobiTradesSubscribe(key, secret string) (err error) {
 }
 ```
 * Okex
-```
+```go
 func OkexOrdersSubscribe(key, secret, pass string) (err error) {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, syscall.SIGTERM, syscall.SIGINT)
