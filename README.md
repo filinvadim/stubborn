@@ -237,7 +237,7 @@ func OkexOrdersSubscribe(key, secret, pass string) (err error) {
 
 	stub.SetAuthHandler(func() (req []byte, resp []byte, err error) {
 		resp = []byte(`{"event":"login","success":true}`)
-        et := epochTime()
+        	et := epochTime()
 		signingString := et + http.MethodGet + "/users/self/verify"
 		signed, err := hmacSha256Base64Sign(signingString, secret)
 		if err != nil {
